@@ -13,6 +13,8 @@ import org.apache.spark.sql.functions
 object Demo {
     val spark: SparkSession = SparkSession.builder().appName("Spark MLlib demo").master("local").getOrCreate()
 
+    import spark.implicits._
+
     val sqlContext: SQLContext = spark.sqlContext
 
     // 日期格式："yyyy-MM-dd HH"，HH为0-23
@@ -46,8 +48,12 @@ object Demo {
         lastAdd = lastAdd.drop("user_geohash", "item_category", "behavior_type")
         //        println(lastAdd.count)//640950
         // 去除原有的time，新增一列day，即所有的数据均为29天的集合中的数据，最后去重
-        lastAdd = lastAdd.drop("time").withColumn("day", functions.lit(29)).distinct()
+        // lastAdd = lastAdd.drop("time").withColumn("day", functions.lit(29)).distinct()
         //        println(lastAdd.count)//527522
+        // 需要保留的数据为对象+小时，但是需要将对象去重
+        lastAdd.map(row => (
+            (row.getAs[String]("user_id"), row.getAs[String]("item_id")),
+            getBetweenHours(dayDate30,simpleDateFormat.parse(row.getAs[String]("time"))).toInt)).take(10).foreach(println)
 
         // 3. 按小时对数据进行归类
         // 4. 统计每个小时中的记录数
@@ -57,5 +63,9 @@ object Demo {
         //        df.take(10).foreach { row =>
         //            UserItemTime(row.getString(0), row.getString(1), simpleDateFormat.parse(row.getString(5)))
         //        }
+    }
+
+    def getBetweenHours(big: Date, small: Date): Long = {
+        (big.getTime - small.getTime) / (1000 * 60 * 60)
     }
 }
