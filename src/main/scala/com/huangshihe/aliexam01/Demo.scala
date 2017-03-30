@@ -51,9 +51,13 @@ object Demo {
         // lastAdd = lastAdd.drop("time").withColumn("day", functions.lit(29)).distinct()
         //        println(lastAdd.count)//527522
         // 需要保留的数据为对象+小时，但是需要将对象去重
-        lastAdd.map(row => (
+        val lastAddData = lastAdd.map(row => (
             (row.getAs[String]("user_id"), row.getAs[String]("item_id")),
-            getBetweenHours(dayDate30,simpleDateFormat.parse(row.getAs[String]("time"))).toInt)).take(10).foreach(println)
+            getBetweenHours(dayDate30, simpleDateFormat.parse(row.getAs[String]("time"))).toInt))
+        lastAddData.rdd.reduceByKey((x,y)=>y).take(10).foreach(println)
+//        println(lastAddData.count) // 640950
+//        println(lastAddData.distinct().count) // 618372
+//        println(lastAddData.rdd.reduceByKey((x,y)=>y).count) // 527522
 
         // 3. 按小时对数据进行归类
         // 4. 统计每个小时中的记录数
