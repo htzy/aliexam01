@@ -50,17 +50,16 @@ object Demo {
         // 去除原有的time，新增一列day，即所有的数据均为29天的集合中的数据，最后去重
         // lastAdd = lastAdd.drop("time").withColumn("day", functions.lit(29)).distinct()
         //        println(lastAdd.count)//527522
-        // 需要保留的数据为对象+小时，但是需要将对象去重
+        // 需要保留的数据为对象+小时，并将对象去重(当出现两个一样的key时，抛弃第一个：x，只要第二个：y)
         val lastAddData = lastAdd.map(row => (
             (row.getAs[String]("user_id"), row.getAs[String]("item_id")),
             getBetweenHours(dayDate30, simpleDateFormat.parse(row.getAs[String]("time"))).toInt))
-        lastAddData.rdd.reduceByKey((x,y)=>y).take(10).foreach(println)
-//        println(lastAddData.count) // 640950
-//        println(lastAddData.distinct().count) // 618372
-//        println(lastAddData.rdd.reduceByKey((x,y)=>y).count) // 527522
-
+            .rdd.reduceByKey((x, y) => y) // count:527522
         // 3. 按小时对数据进行归类
+        // 将key和value互换，'小时'作为key，'用户-商品对'作为value
+        val groupByHours = lastAddData.map(row =>(row._2,row._1)).groupByKey().take(10).foreach(println)
         // 4. 统计每个小时中的记录数
+
         // 5. 筛选出第30天中用户购买的操作
         // 6. 数据去重（多次购物在这里只算一次购买记录）
         // 7. 计算概率，即在每次加购物车的小时中，成功购买的次数/当前小时中加购物车的次数
