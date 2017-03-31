@@ -84,12 +84,15 @@ object Demo {
         // 7.5 map:
         // 计算概率，Iterable(user_id, item_id).size即为距离最后一天前hour小时加入到购物车内的"用户-商品对"的个数，则概率为size/counts
         // 生成格式：(hour，该小时内加入购物车/最后一天成功购买的量)
+        // 7.6 sortByKey:
+        // 按照hour从小到大排序
         lastAddData.join(finalBuyData.rdd)
             .map(row => (row._2._1, row._1))
             .groupByKey()
             .join(countsByHours)
-            .map(row => (row._1, (row._2._1.size + 0.0) / row._2._2))
-            .sortByKey().take(10).foreach(println)
+            .map(row => (row._1, row._2._1.size.toDouble / row._2._2))
+            .sortByKey()
+            .saveAsTextFile("src/main/resources/results/part-demo-1/")
 
     }
 
