@@ -92,7 +92,7 @@ object Demo {
             .join(countsByHours)
             .map(row => (row._1, row._2._1.size.toDouble / row._2._2))
             .sortByKey()
-            .saveAsTextFile("src/main/resources/results/part-demo-1/")
+            .toDS.write.json("src/main/resources/results/part-demo-3")
 
     }
 
