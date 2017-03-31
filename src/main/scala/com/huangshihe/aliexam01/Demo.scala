@@ -3,8 +3,7 @@ package com.huangshihe.aliexam01
 import java.text.{DateFormat, SimpleDateFormat}
 import java.util.Date
 
-import org.apache.spark.sql.{DataFrame, SQLContext, SparkSession}
-import org.apache.spark.sql.functions
+import org.apache.spark.sql._
 
 /**
   * Created by huangshihe on 27/03/2017.
@@ -54,26 +53,46 @@ object Demo {
         val lastAddData = lastAdd.map(row => (
             (row.getAs[String]("user_id"), row.getAs[String]("item_id")),
             getBetweenHours(dayDate30, simpleDateFormat.parse(row.getAs[String]("time"))).toInt))
-            .rdd.reduceByKey((x, y) => y) // count:527522
+            .rdd.reduceByKey((x, y) => y)        // count:527522
         // 3. 按小时对数据进行归类
         // 将key和value互换，'小时'作为key，'用户-商品对'作为value
         val groupByHours = lastAddData.map(row => (row._2, row._1)).groupByKey()
-        // 4. 统计每个小时中的记录数
+        // 4. 统计每个小时中的记录数(hours, counts)
         val countsByHours = groupByHours.map(row => (row._1, row._2.size))
         // 5. 筛选出第30天中用户购买(4)的操作
-        var finalBuy = df.filter(row => simpleDateFormat.parse(row.getString(5)).after(dayDate30))
+        val finalBuy = df.filter(row => simpleDateFormat.parse(row.getString(5)).after(dayDate30))
             .filter(row => 4.equals(Integer.valueOf(row.getString(2))))
         // 6. 数据去重（多次购物在这里只算一次购买记录）
         // 去除无用列
-        finalBuy = finalBuy.drop("user_geohash", "item_category", "behavior_type", "time").distinct()
-        println(finalBuy.count()) // 5976
+        val finalBuyData = finalBuy.drop("user_geohash", "item_category", "behavior_type", "time").distinct()
+            .map(row => (row.getAs[String]("user_id"), row.getAs[String]("item_id")))
+        //        println(finalBuyData.count()) // 5976
         // 7. 计算概率，即在每次加购物车的小时中，成功购买的次数/当前小时中加购物车的次数
-        //        df.take(10).foreach { row =>
-        //            UserItemTime(row.getString(0), row.getString(1), simpleDateFormat.parse(row.getString(5)))
-        //        }
+        // 生成格式：(hours，该小时内加入购物车并与最后一天成功购买的比例)
+        // 分布式不能传参
+//        val result = groupByHours.map(row => (row._1, getSuccessPer(finalBuyData, row._2))).take(10).foreach(println)
+        val result = groupByHours.map(row => (row._1, finalBuyData.intersect(row._2.toStream.toDS()).count())).take(10).foreach(println)
     }
 
     def getBetweenHours(big: Date, small: Date): Long = {
         (big.getTime - small.getTime) / (1000 * 60 * 60)
     }
+
+    /**
+      * 计算成功的概率
+      *
+      * @param finalBuy 最后一天成功购买的总记录数
+      * @param hourAdd  最后时刻（hours）增加到购物车中的记录
+      * @return
+      */
+    def getSuccessPer(finalBuy: Dataset[(String, String)], hourAdd: Iterable[(String, String)]): Double = {
+        if (hourAdd.isEmpty) {
+            return 0.0
+        }
+        val stream = hourAdd.toStream
+        val ds = stream.toDS
+        val success = finalBuy.intersect(ds)
+        (success.count() + 0.0) / hourAdd.size
+    }
+
 }
