@@ -2,3 +2,4 @@
 *.iml
 src/main/resources/data/
 target/
+src/main/resources/results/
