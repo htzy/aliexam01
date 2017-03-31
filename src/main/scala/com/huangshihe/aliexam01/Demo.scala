@@ -5,6 +5,8 @@ import java.util.Date
 
 import org.apache.spark.sql._
 
+import scala.io.Source
+
 /**
   * Created by huangshihe on 27/03/2017.
   *
@@ -86,13 +88,16 @@ object Demo {
         // 生成格式：(hour，该小时内加入购物车/最后一天成功购买的量)
         // 7.6 sortByKey:
         // 按照hour从小到大排序
+        // 7.7 collect:
+        // 将map的结果"收集"起来
         lastAddData.join(finalBuyData.rdd)
             .map(row => (row._2._1, row._1))
             .groupByKey()
             .join(countsByHours)
-            .map(row => (row._1, row._2._1.size.toDouble / row._2._2))
+            .map(row => (row._1, (row._2._1.size.toDouble / row._2._2).formatted("%.4f")))
             .sortByKey()
-            .toDS.write.json("src/main/resources/results/part-demo-3")
+            .collect()
+            .toStream.toDS().write.csv("src/main/resources/results/part-demo-3")
 
     }
 
