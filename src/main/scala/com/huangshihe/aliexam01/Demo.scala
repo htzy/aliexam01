@@ -89,7 +89,7 @@ object Demo {
             .groupByKey()
             .join(countsByHours)
             .map(row => (row._1, (row._2._1.size + 0.0) / row._2._2))
-            .take(10).foreach(println)
+            .sortByKey().take(10).foreach(println)
 
     }
 
