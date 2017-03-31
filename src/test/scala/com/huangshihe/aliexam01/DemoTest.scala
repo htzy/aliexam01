@@ -1,7 +1,6 @@
 package com.huangshihe.aliexam01
 
 import java.text.{DateFormat, SimpleDateFormat}
-import java.util.Date
 
 import org.junit.Test
 
@@ -12,12 +11,12 @@ import org.junit.Test
 class DemoTest {
 
     @Test
-    def lastTime3() = {
+    def testLastTime3() = {
         Demo.lastTime3()
     }
 
     @Test
-    def getBetweenHours() = {
+    def testGetBetweenHours() = {
         val simpleDateFormat: DateFormat = new SimpleDateFormat("yyyy-MM-dd HH")
         val bigDate = simpleDateFormat.parse("2014-11-19 13")
         val smallDate = simpleDateFormat.parse("2014-11-18 12")
