@@ -118,4 +118,17 @@ object Demo {
         clearData.collect.toStream.toDS.write.csv("src/main/resources/results/part-demo-2")
     }
 
+    def getLastHourData(): Unit = {
+        // 1. 筛选出第30天最后一个小时最后一次用户加购物车操作(3)
+        val lastHour: java.util.Date = simpleDateFormat.parse("2014-12-18 22")
+
+        val lastAdd = df.filter(row => simpleDateFormat.parse(row.getString(5)).after(lastHour))
+            .filter(row => 3.equals(Integer.valueOf(row.getString(2))))
+        // 2. 去除多余列及重复数据
+        val clearData = lastAdd.drop("user_geohash", "item_category", "behavior_type", "time").distinct()
+            .map(row => (row.getAs[String]("user_id"), row.getAs[String]("item_id")))
+        // 3. 写入csv
+        clearData.collect.toStream.toDS.write.csv("src/main/resources/results/part-demo-3")
+    }
+
 }

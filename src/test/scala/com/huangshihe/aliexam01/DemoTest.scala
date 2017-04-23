@@ -28,4 +28,8 @@ class DemoTest {
         Demo.getLastDayData()
     }
 
+    @Test
+    def testGetLastHourData() = {
+        Demo.getLastHourData()
+    }
 }
