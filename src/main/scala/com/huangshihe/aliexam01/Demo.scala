@@ -5,8 +5,6 @@ import java.util.Date
 
 import org.apache.spark.sql._
 
-import scala.io.Source
-
 /**
   * Created by huangshihe on 27/03/2017.
   *
@@ -26,10 +24,9 @@ object Demo {
         df.take(10).foreach(println)
     }
 
-    case class UserItemTime(user_id: String, item_id: String, time: Date)
+    //    case class UserItemTime(user_id: String, item_id: String, time: Date)
 
     val simpleDateFormat: DateFormat = new SimpleDateFormat("yyyy-MM-dd HH")
-
 
     /**
       * 行为类型：浏览-1，收藏-2，加购物车-3，购买-4
@@ -55,7 +52,7 @@ object Demo {
         val lastAddData = lastAdd.map(row => (
             (row.getAs[String]("user_id"), row.getAs[String]("item_id")),
             getBetweenHours(dayDate30, simpleDateFormat.parse(row.getAs[String]("time"))).toInt))
-            .rdd.reduceByKey((x, y) => y)
+            .rdd.reduceByKey((_, y) => y)
         // 3. 按小时对数据进行归类
         // 将key和value互换，'小时'作为key，'用户-商品对'作为value
         val groupByHours = lastAddData.map(row => (row._2, row._1)).groupByKey()
@@ -103,6 +100,22 @@ object Demo {
 
     def getBetweenHours(big: Date, small: Date): Long = {
         (big.getTime - small.getTime) / (1000 * 60 * 60)
+    }
+
+    /**
+      * 获得最后一天增加到购物车中的记录
+      */
+    def getLastDayData(): Unit = {
+        // 1. 筛选出第30天中最后一次用户加购物车操作(3)
+        val dayDate30: java.sql.Date = java.sql.Date.valueOf("2014-12-18")
+
+        val lastAdd = df.filter(row => simpleDateFormat.parse(row.getString(5)).after(dayDate30))
+            .filter(row => 3.equals(Integer.valueOf(row.getString(2))))
+        // 2. 去除多余列及重复数据
+        val clearData = lastAdd.drop("user_geohash", "item_category", "behavior_type", "time").distinct()
+            .map(row => (row.getAs[String]("user_id"), row.getAs[String]("item_id")))
+        // 3. 写入csv
+        clearData.collect.toStream.toDS.write.csv("src/main/resources/results/part-demo-2")
     }
 
 }

@@ -23,4 +23,9 @@ class DemoTest {
         println(Demo.getBetweenHours(bigDate, smallDate))
     }
 
+    @Test
+    def testGetLastDayData() = {
+        Demo.getLastDayData()
+    }
+
 }
