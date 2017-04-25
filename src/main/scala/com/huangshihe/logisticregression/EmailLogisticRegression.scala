@@ -1,6 +1,6 @@
 package com.huangshihe.logisticregression
 
-import org.apache.spark.ml.feature.{HashingTF, Tokenizer}
+import org.apache.spark.ml.feature.{HashingTF, LabeledPoint, Tokenizer}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 
@@ -34,6 +34,13 @@ object EmailLogisticRegression {
         spamFeatures.take(10).foreach(println)
         hamFeatures.take(10).foreach(println)
 
+        val positiveExample = spamFeatures.map(row => LabeledPoint(1, row.getAs[org.apache.spark.ml.linalg.Vector]("rawFeatures")))
+        val negativeExample = hamFeatures.map(row => LabeledPoint(0, row.getAs[org.apache.spark.ml.linalg.Vector]("rawFeatures")))
+        val trainingData = positiveExample.union(negativeExample)
+
+        trainingData.cache()
+
+        trainingData.take(10).foreach(println)
 
     }
 }
