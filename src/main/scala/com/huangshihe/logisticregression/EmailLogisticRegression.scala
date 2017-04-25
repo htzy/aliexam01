@@ -1,6 +1,6 @@
 package com.huangshihe.logisticregression
 
-import org.apache.spark.ml.feature.Tokenizer
+import org.apache.spark.ml.feature.{HashingTF, Tokenizer}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 
@@ -16,14 +16,24 @@ object EmailLogisticRegression {
         val spam: RDD[String] = spark.sparkContext.textFile("src/main/resources/data/email_spam.txt")
         val ham: RDD[String] = spark.sparkContext.textFile("src/main/resources/data/email_normal.txt")
 
-        // 首先使用分解器Tokenizer把句子划分为单个词语
-        val tokenizer = new Tokenizer().setInputCol("sentence").setOutputCol("words")
-        // 对于每个句子（词袋），使用HashingTF将句子转换为特征向量，最后使用IDF重新调整特征向量。这种转换通常可以提高使用文本特征的性能。
-
         // 开启隐式转换，否则rdd不能直接调用toDF转为DataFrame
         import spark.implicits._
 
-        tokenizer.transform(spam.toDF("sentence")).take(10).foreach(println)
+        // 首先使用分解器Tokenizer把句子划分为单个词语
+        val tokenizer = new Tokenizer().setInputCol("sentence").setOutputCol("words")
+
+        val spamWordsData = tokenizer.transform(spam.toDF("sentence"))
+        val hamWordsData = tokenizer.transform(ham.toDF("sentence"))
+
+        // 使用HashingTF将单词转换为特征向量，最后使用IDF重新调整特征向量。这种转换通常可以提高使用文本特征的性能。
+        val hashingTF = new HashingTF().setInputCol("words").setOutputCol("rawFeatures").setNumFeatures(10000)
+
+        val spamFeatures = hashingTF.transform(spamWordsData)
+        val hamFeatures = hashingTF.transform(hamWordsData)
+
+        spamFeatures.take(10).foreach(println)
+        hamFeatures.take(10).foreach(println)
+
 
     }
 }
