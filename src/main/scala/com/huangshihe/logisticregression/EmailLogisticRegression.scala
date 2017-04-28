@@ -1,5 +1,7 @@
 package com.huangshihe.logisticregression
 
+import org.apache.spark.ml.Pipeline
+import org.apache.spark.ml.classification.LogisticRegression
 import org.apache.spark.ml.feature.{HashingTF, LabeledPoint, Tokenizer}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
@@ -25,7 +27,7 @@ object EmailLogisticRegression {
         val hamWordsData = tokenizer.transform(normal.toDF("sentence"))
 
         // 使用HashingTF将单词转换为特征向量，最后使用IDF重新调整特征向量。这种转换通常可以提高使用文本特征的性能。
-        val hashingTF = new HashingTF().setInputCol("words").setOutputCol("rawFeatures").setNumFeatures(10000)
+        val hashingTF = new HashingTF().setInputCol("words").setOutputCol("features").setNumFeatures(10000)
 
         val spamFeatures = hashingTF.transform(spamWordsData)
         val hamFeatures = hashingTF.transform(hamWordsData)
@@ -34,13 +36,39 @@ object EmailLogisticRegression {
         hamFeatures.take(10).foreach(println)
 
         // 创建LabeledPoint数据集分别存放阳性（垃圾邮件）和阴性（正常邮件）的例子
-        val positiveExample = spamFeatures.map(row => LabeledPoint(1, row.getAs[org.apache.spark.ml.linalg.Vector]("rawFeatures")))
-        val negativeExample = hamFeatures.map(row => LabeledPoint(0, row.getAs[org.apache.spark.ml.linalg.Vector]("rawFeatures")))
+        val positiveExample = spamFeatures.map(row => LabeledPoint(1, row.getAs[org.apache.spark.ml.linalg.Vector]("features")))
+        val negativeExample = hamFeatures.map(row => LabeledPoint(0, row.getAs[org.apache.spark.ml.linalg.Vector]("features")))
         val trainingData = positiveExample.union(negativeExample)
 
         trainingData.cache()
 
         trainingData.take(10).foreach(println)
+        trainingData.printSchema()
+
+        val lor = new LogisticRegression()
+        val model = lor.fit(trainingData)
+
+        val posTest = hashingTF.transform(tokenizer.transform(Seq("omg get cheap stuff by sending money to...").toDF("sentence")))
+        val negTest = hashingTF.transform(tokenizer.transform(Seq("Hi Dad, I started studying Spark the other ...").toDF("sentence")))
+
+        model.transform(posTest).show()
+        model.transform(negTest).show()
+        // print schema
+        //        model.transform(posTest).printSchema()
+        //        root
+        //        |-- sentence: string (nullable = true)
+        //        |-- words: array (nullable = true)
+        //        |    |-- element: string (containsNull = true)
+        //        |-- features: vector (nullable = true)
+        //        |-- rawPrediction: vector (nullable = true)
+        //        |-- probability: vector (nullable = true)
+        //        |-- prediction: double (nullable = true)
+
+        // TODO use pipeline
+        //        val pipeline = new Pipeline().setStages(Array(tokenizer, hashingTF, lor))
+        //
+        //        val model = pipeline.fit(trainingData)
+
 
     }
 
@@ -70,8 +98,8 @@ object EmailLogisticRegression {
 
     def main(args: Array[String]): Unit = {
         // Spark2.0 推荐使用ml而不是mllib
-        useMLLib()
-
+        //        useMLLib()
+        useML()
         spark.stop()
     }
 }
