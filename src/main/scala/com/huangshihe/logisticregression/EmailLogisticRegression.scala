@@ -4,7 +4,7 @@ import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.classification.LogisticRegression
 import org.apache.spark.ml.feature.{HashingTF, LabeledPoint, Tokenizer}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkSession, functions}
 
 /**
   * Created by huangshihe on 25/04/2017.
@@ -63,12 +63,30 @@ object EmailLogisticRegression {
         //        |-- rawPrediction: vector (nullable = true)
         //        |-- probability: vector (nullable = true)
         //        |-- prediction: double (nullable = true)
+    }
 
-        // TODO use pipeline
-        //        val pipeline = new Pipeline().setStages(Array(tokenizer, hashingTF, lor))
-        //
-        //        val model = pipeline.fit(trainingData)
+    def useMLWithPipeline(): Unit = {
+        // 开启隐式转换，否则rdd不能直接调用toDF转为DataFrame
+        import spark.implicits._
 
+        val data = spam.toDF("sentence").withColumn("label", functions.lit(1.0)) union
+            normal.toDF("sentence").withColumn("label", functions.lit(0.0))
+        data.show()
+
+        // 首先使用分解器Tokenizer把句子划分为单个词语
+        val tokenizer = new Tokenizer().setInputCol("sentence").setOutputCol("words")
+        // 使用HashingTF将单词转换为特征向量，最后使用IDF重新调整特征向量。这种转换通常可以提高使用文本特征的性能。
+        val hashingTF = new HashingTF().setInputCol(tokenizer.getOutputCol).setOutputCol("features").setNumFeatures(10000)
+        // 使用逻辑回归
+        val lor = new LogisticRegression()
+        // 新建pipeline，分为三个阶段：分词、转换特征向量和逻辑回归
+        val pipeline = new Pipeline().setStages(Array(tokenizer, hashingTF, lor))
+        // 训练模型
+        val model = pipeline.fit(data)
+
+        // 测试
+        model.transform(Seq("omg get cheap stuff by sending money to ...").toDF("sentence")).show()
+        model.transform(Seq("Hi Dad, I started studying Spark the other ...").toDF("sentence")).show()
 
     }
 
@@ -99,7 +117,8 @@ object EmailLogisticRegression {
     def main(args: Array[String]): Unit = {
         // Spark2.0 推荐使用ml而不是mllib
         //        useMLLib()
-        useML()
+        //        useML()
+        useMLWithPipeline()
         spark.stop()
     }
 }
