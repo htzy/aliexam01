@@ -84,6 +84,13 @@ object EmailLogisticRegression {
         // 训练模型
         val model = pipeline.fit(data)
 
+        // spark.createDataFrame可以通过Seq创建df，但是Seq中的数据格式是tuples，不能直接是String，Int等，例子如下：
+        // 以下是正确的
+        //        val testOk = spark.createDataFrame(Seq(
+        //            (1L, "apache spark")
+        //        )).toDF("id", "sentence")
+        //        val testError = spark.createDataFrame(Seq("apache spark")).toDF("sentence")
+
         // 测试数据转为dataframe
         val test = Seq("omg get cheap stuff by sending money to ...", "Hi Dad, I started studying Spark the other ...").toDF("sentence")
 
