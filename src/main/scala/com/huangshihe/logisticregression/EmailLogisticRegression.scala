@@ -4,7 +4,7 @@ import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.classification.LogisticRegression
 import org.apache.spark.ml.feature.{HashingTF, LabeledPoint, Tokenizer}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{SparkSession, functions}
+import org.apache.spark.sql.{Row, SparkSession, functions}
 
 /**
   * Created by huangshihe on 25/04/2017.
@@ -84,10 +84,16 @@ object EmailLogisticRegression {
         // 训练模型
         val model = pipeline.fit(data)
 
-        // 测试
-        model.transform(Seq("omg get cheap stuff by sending money to ...").toDF("sentence")).show()
-        model.transform(Seq("Hi Dad, I started studying Spark the other ...").toDF("sentence")).show()
+        // 测试数据转为dataframe
+        val test = Seq("omg get cheap stuff by sending money to ...", "Hi Dad, I started studying Spark the other ...").toDF("sentence")
 
+        //        model.transform(test).show()
+        model.transform(test)
+            .select("sentence", "probability", "prediction")
+            .collect()
+            .foreach { case Row(sentence: String, prob: org.apache.spark.ml.linalg.Vector, prediction: Double) =>
+                println(s"($sentence) --> prob=$prob, prediction=$prediction")
+            }
     }
 
     @Deprecated
