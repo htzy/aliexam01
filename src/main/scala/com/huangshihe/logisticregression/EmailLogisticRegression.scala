@@ -2,7 +2,9 @@ package com.huangshihe.logisticregression
 
 import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.classification.LogisticRegression
+import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator
 import org.apache.spark.ml.feature.{HashingTF, LabeledPoint, Tokenizer}
+import org.apache.spark.ml.tuning.{CrossValidator, ParamGridBuilder}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SparkSession, functions}
 
@@ -103,6 +105,44 @@ object EmailLogisticRegression {
             }
     }
 
+    def useMLWithParam(): Unit = {
+        // 开启隐式转换，否则rdd不能直接调用toDF转为DataFrame
+        import spark.implicits._
+
+        val data = spam.toDF("sentence").withColumn("label", functions.lit(1.0)) union
+            normal.toDF("sentence").withColumn("label", functions.lit(0.0))
+        data.show()
+
+        // 首先使用分解器Tokenizer把句子划分为单个词语
+        val tokenizer = new Tokenizer().setInputCol("sentence").setOutputCol("words")
+        // 使用HashingTF将单词转换为特征向量，最后使用IDF重新调整特征向量。这种转换通常可以提高使用文本特征的性能。
+        val hashingTF = new HashingTF().setInputCol(tokenizer.getOutputCol).setOutputCol("features").setNumFeatures(10000)
+        // 使用逻辑回归
+        val lor = new LogisticRegression()
+
+        val pipeline = new Pipeline().setStages(Array(tokenizer, hashingTF, lor))
+
+        // 通过交叉验证对一批参数进行网格搜索，来找到最佳的模型，而不是使用pipeline.fit(data)只对训练集进行一次拟合
+        val paramMaps = new ParamGridBuilder()
+            .addGrid(hashingTF.numFeatures, Array(10000, 20000))
+            .addGrid(lor.maxIter, Array(100, 200))
+            .build()
+        val eval = new BinaryClassificationEvaluator()
+        val cv = new CrossValidator().setEstimatorParamMaps(paramMaps).setEstimator(pipeline).setEvaluator(eval)
+        val bestModel = cv.fit(data)
+
+        // 测试数据转为dataframe
+        val test = Seq("omg get cheap stuff by sending money to ...", "Hi Dad, I started studying Spark the other ...").toDF("sentence")
+
+        //        model.transform(test).show()
+        bestModel.transform(test)
+            .select("sentence", "probability", "prediction")
+            .collect()
+            .foreach { case Row(sentence: String, prob: org.apache.spark.ml.linalg.Vector, prediction: Double) =>
+                println(s"($sentence) --> prob=$prob, prediction=$prediction")
+            }
+    }
+
     @Deprecated
     def useMLLib(): Unit = {
         // 创建一个HashingTF实例把邮件文本映射为包含10000个特征的向量
@@ -131,7 +171,79 @@ object EmailLogisticRegression {
         // Spark2.0 推荐使用ml而不是mllib
         //        useMLLib()
         //        useML()
-        useMLWithPipeline()
+        //        useMLWithPipeline()
+        useMLWithParam()
+        //        demoParam()
         spark.stop()
+    }
+
+    /**
+      * https://spark.apache.org/docs/2.0.2/ml-tuning.html
+      */
+    def demoParam(): Unit = {
+        val training = spark.createDataFrame(Seq(
+            (0L, "a b c d e spark", 1.0),
+            (1L, "b d", 0.0),
+            (2L, "spark f g h", 1.0),
+            (3L, "hadoop mapreduce", 0.0),
+            (4L, "b spark who", 1.0),
+            (5L, "g d a y", 0.0),
+            (6L, "spark fly", 1.0),
+            (7L, "was mapreduce", 0.0),
+            (8L, "e spark program", 1.0),
+            (9L, "a e c l", 0.0),
+            (10L, "spark compile", 1.0),
+            (11L, "hadoop software", 0.0)
+        )).toDF("id", "text", "label")
+
+        // Configure an ML pipeline, which consists of three stages: tokenizer, hashingTF, and lr.
+        val tokenizer = new Tokenizer()
+            .setInputCol("text")
+            .setOutputCol("words")
+        val hashingTF = new HashingTF()
+            .setInputCol(tokenizer.getOutputCol)
+            .setOutputCol("features")
+        val lr = new LogisticRegression()
+            .setMaxIter(10)
+        val pipeline = new Pipeline()
+            .setStages(Array(tokenizer, hashingTF, lr))
+
+        // We use a ParamGridBuilder to construct a grid of parameters to search over.
+        // With 3 values for hashingTF.numFeatures and 2 values for lr.regParam,
+        // this grid will have 3 x 2 = 6 parameter settings for CrossValidator to choose from.
+        val paramGrid = new ParamGridBuilder()
+            .addGrid(hashingTF.numFeatures, Array(10, 100, 1000))
+            .addGrid(lr.regParam, Array(0.1, 0.01))
+            .build()
+
+        // We now treat the Pipeline as an Estimator, wrapping it in a CrossValidator instance.
+        // This will allow us to jointly choose parameters for all Pipeline stages.
+        // A CrossValidator requires an Estimator, a set of Estimator ParamMaps, and an Evaluator.
+        // Note that the evaluator here is a BinaryClassificationEvaluator and its default metric
+        // is areaUnderROC.
+        val cv = new CrossValidator()
+            .setEstimator(pipeline)
+            .setEvaluator(new BinaryClassificationEvaluator)
+            .setEstimatorParamMaps(paramGrid)
+            .setNumFolds(2) // Use 3+ in practice
+
+        // Run cross-validation, and choose the best set of parameters.
+        val cvModel = cv.fit(training)
+
+        // Prepare test documents, which are unlabeled (id, text) tuples.
+        val test = spark.createDataFrame(Seq(
+            (4L, "spark i j k"),
+            (5L, "l m n"),
+            (6L, "mapreduce spark"),
+            (7L, "apache hadoop")
+        )).toDF("id", "text")
+
+        // Make predictions on test documents. cvModel uses the best model found (lrModel).
+        cvModel.transform(test)
+            .select("id", "text", "probability", "prediction")
+            .collect()
+            .foreach { case Row(id: Long, text: String, prob: org.apache.spark.ml.linalg.Vector, prediction: Double) =>
+                println(s"($id, $text) --> prob=$prob, prediction=$prediction")
+            }
     }
 }
