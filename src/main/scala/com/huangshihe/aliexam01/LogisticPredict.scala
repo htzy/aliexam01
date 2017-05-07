@@ -26,6 +26,39 @@ object LogisticPredict {
 
     /**
       * 行为类型：浏览-1，收藏-2，加购物车-3，购买-4
+      * 模型思路：
+      * 根据行为类型将数据分为四类，1-3类中的记录若在4中出现，即成功购买的标注1，否则标注0。
+      * 数据输入列：user_id,item_id,time,oper_1,oper_2,oper_3 (oper_1即为否浏览过；oper_2为是否收藏；oper_3为是否加入购物车)
+      * 自变量：time,oper_1,oper_2,oper_3
+      * 因变量：oper_4
+      *
+      * ----------------------
+      * TODO step 2
+      * 自变量增加oper_1count,oper_2count,oper_3count (即为浏览过的次数，收藏的次数，加入购物车的次数)
+      * ----------------------
+      * TODO step 3
+      * 考虑是否有oper_1和oper_1count同时存在的必要性，或者只用哪一个更好？同理如行为类型2、3。使用模型验证。
+      * ----------------------
+      * TODO step 4
+      * 自变量加入用户位置的空间标识
+      * ----------------------
+      * TODO step 5
+      * 自变量加入商品位置的空间标识
+      * ----------------------
+      * TODO step 6
+      * 自变量加入商品分类标识
+      *
+      * ----------------------
+      * 进阶（难度无先后顺序）：
+      * 1. 浏览操作和收藏、加购物车、购买的相关性？如是否收藏操作之前肯定有浏览记录？（即自变量之间存在相关性，而这是要尽量避免的）
+      * 2. 多次收藏的含义？多次加购物车的含义？
+      * 3. 使用逐步回归？
+      * 4. 使用蒙特卡洛模拟？
+      * 5. 使用神经网络？
+      * 6. 使用决策树？
+      * 7. 使用随机森林？
+      * 8. 集成多个模型的结果？集成算法？提升多少？需验证。
+      * 9. 修改阈值？专家打分法？为了提高准确率（牺牲其他指标）？
       *
       */
     def getPredictData(): Unit = {
@@ -37,12 +70,16 @@ object LogisticPredict {
             .withColumn("time", getDiffHour(df("time")))
             .drop("user_geohash", "item_category") // TODO 暂时不考虑"用户位置"和"商品分类标识"
 
-        wholeData.printSchema()
-        //        root
-        //        |-- user_id: integer (nullable = true)
-        //        |-- item_id: integer (nullable = true)
-        //        |-- behavior_type: integer (nullable = true)
-        //        |-- time: integer (nullable = true)
+        wholeData.take(10).foreach(println)
+
+        // 将数据按行为类型分成4类
+        val dataOfView = wholeData.filter(row => row.getAs[Int]("behavior_type") == VIEW_TYPE)
+        val dataOfCollect = wholeData.filter(row => row.getAs[Int]("behavior_type") == COLLECT_TYPE)
+        val dataOfAdd = wholeData.filter(row => row.getAs[Int]("behavior_type") == ADD_TO_CART_TYPE)
+        val dataOfBuy = wholeData.filter(row => row.getAs[Int]("behavior_type") == BUY_TYPE)
+
+        // 预处理后，将1-3类数据合并
+
 
     }
 
