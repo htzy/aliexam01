@@ -1,5 +1,9 @@
 package com.huangshihe.aliexam01
 
+import java.text.{DateFormat, SimpleDateFormat}
+import java.util.Date
+
+import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.{DataFrame, SQLContext, SparkSession}
 
@@ -70,10 +74,36 @@ object LogisticPredict {
         //        |-- item_id: integer (nullable = true)
     }
 
+    /**
+      * "浏览"类型
+      */
     val VIEW_TYPE = 1
+    /**
+      * "收藏"类型
+      */
     val COLLECT_TYPE = 2
+    /**
+      * "加购物车"类型
+      */
     val ADD_TO_CART_TYPE = 3
+    /**
+      * "购物"类型
+      */
     val BUY_TYPE = 4
 
+    import org.apache.spark.sql.functions._
+
+    val day30: java.sql.Date = java.sql.Date.valueOf("2014-12-18")
+    val day31: java.sql.Date = java.sql.Date.valueOf("2014-12-19")
+    val simpleDateFormat: DateFormat = new SimpleDateFormat("yyyy-MM-dd HH")
+
+    val toInt: UserDefinedFunction = udf[Int, String](_.toInt)
+    val toHour: UserDefinedFunction = udf((t: String) => "%04d".format(t.toInt).take(2).toInt)
+    val getBetweenHours: UserDefinedFunction =
+        udf((big: String, small: Date) => (simpleDateFormat.parse(big).getTime - small.getTime) / (1000 * 60 * 60))
+
+    // 这里的参数time，不能使用_代替，否则报错
+    val getDiffHour: UserDefinedFunction =
+        udf((time: String) => (day31.getTime - simpleDateFormat.parse(time).getTime) / (1000 * 60 * 60))
 
 }
