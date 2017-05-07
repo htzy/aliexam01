@@ -31,47 +31,19 @@ object LogisticPredict {
     def getPredictData(): Unit = {
         // 将数据转换格式
         // ref: http://stackoverflow.com/questions/29383107/how-to-change-column-types-in-spark-sqls-dataframe
-        df.printSchema()
-        //        root
-        //        |-- user_id: string (nullable = true)
-        //        |-- item_id: string (nullable = true)
-        //        |-- behavior_type: string (nullable = true)
-        //        |-- user_geohash: string (nullable = true)
-        //        |-- item_category: string (nullable = true)
-        //        |-- time: string (nullable = true)
+        val wholeData = df.withColumn("user_id", df("user_id").cast(IntegerType))
+            .withColumn("item_id", df("item_id").cast(IntegerType))
+            .withColumn("behavior_type", df("behavior_type").cast(IntegerType))
+            .withColumn("time", getDiffHour(df("time")))
+            .drop("user_geohash", "item_category") // TODO 暂时不考虑"用户位置"和"商品分类标识"
 
-        // 以下方法中df的schema都不会发生变化
-        // 方法一：使用org.apache.spark.sql.functions.udf + withColumn
-        import org.apache.spark.sql.functions._
-        val toInt = udf[Int, String](_.toInt)
-        val changed = df.withColumn("user_id", toInt(df("user_id")))
-        changed.printSchema()
-        //        root
-        //        |-- user_id: integer (nullable = true)
-        //        |-- item_id: string (nullable = true)
-        //        |-- behavior_type: string (nullable = true)
-        //        |-- user_geohash: string (nullable = true)
-        //        |-- item_category: string (nullable = true)
-        //        |-- time: string (nullable = true)
-        println("df:")
-        df.printSchema()
-        //        root
-        //        |-- user_id: string (nullable = true)
-        //        |-- item_id: string (nullable = true)
-        //        |-- behavior_type: string (nullable = true)
-        //        |-- user_geohash: string (nullable = true)
-        //        |-- item_category: string (nullable = true)
-        //        |-- time: string (nullable = true)
-        // 方法二：用withColumn + cast
-        df.withColumn("user_id", df("user_id").cast(IntegerType)).printSchema()
-        println("df:")
-        df.printSchema() // schema保持不变
-
-        // 方法三：用select + cast + as
-        df.select(df("user_id").cast(IntegerType).as("user_id"), df("item_id").cast(IntegerType).as("item_id")).printSchema()
+        wholeData.printSchema()
         //        root
         //        |-- user_id: integer (nullable = true)
         //        |-- item_id: integer (nullable = true)
+        //        |-- behavior_type: integer (nullable = true)
+        //        |-- time: integer (nullable = true)
+
     }
 
     /**
@@ -104,6 +76,6 @@ object LogisticPredict {
 
     // 这里的参数time，不能使用_代替，否则报错
     val getDiffHour: UserDefinedFunction =
-        udf((time: String) => (day31.getTime - simpleDateFormat.parse(time).getTime) / (1000 * 60 * 60))
+        udf((time: String) => ((day31.getTime - simpleDateFormat.parse(time).getTime) / (1000 * 60 * 60)).toInt)
 
 }
