@@ -34,6 +34,11 @@ object LogisticPredict {
       * 数据输入列：user_id,item_id,time,type_1,type_2,type_3 (type_1即为否浏览过；type_2为是否收藏；type_3为是否加入购物车)
       * 自变量：time,type_1,type_2,type_3
       * 因变量：type_4
+      * TODO 修改：
+      * 因为对于一条记录：type_1 + type_2 + type_3 == 1
+      * （也就是说其实只有两个变量，第三个为虚拟变量，可以用其他两个变量代替如：1 - type_1 - type_2，那么就不能加入第三个变量，除非打破上述规则：三个变量之和为1）
+      * 变量之间不能有线性关系，即不能有"多重共线"
+      * time,type_1_count,type_2,type_2_count,type_3,type_3_count
       *
       * ----------------------
       * TODO step 2
