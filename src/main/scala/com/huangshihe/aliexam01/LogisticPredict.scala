@@ -32,17 +32,17 @@ object LogisticPredict {
       * 模型思路：
       * 根据行为类型将数据分为四类，1-3类中的记录若在4中出现，即成功购买的标注1，否则标注0。
       * 数据输入列：user_id,item_id,time,type_1,type_2,type_3 (type_1即为否浏览过；type_2为是否收藏；type_3为是否加入购物车)
-      * 自变量：time,type_1,type_2,type_3
+      * 自变量：time,type_1count,type_2,type_2count,type_3,type_3count
       * 因变量：type_4
-      * TODO 修改：
-      * 因为对于一条记录：type_1 + type_2 + type_3 == 1
-      * （也就是说其实只有两个变量，第三个为虚拟变量，可以用其他两个变量代替如：1 - type_1 - type_2，那么就不能加入第三个变量，除非打破上述规则：三个变量之和为1）
-      * 变量之间不能有线性关系，即不能有"多重共线"
-      * time,type_1_count,type_2,type_2_count,type_3,type_3_count
       *
       * ----------------------
-      * TODO step 2
+      * step 2
       * 自变量增加type_1count,type_2count,type_3count (即为浏览过的次数，收藏的次数，加入购物车的次数)
+      * 自变量减少type_1，type_1为是否浏览，为虚拟变量，可以用type_2和type_3替代
+      * 因为对于一条记录：type_1 + type_2 + type_3 == 1
+      * （也就是说其实只有两个变量type_2,type_3，第三个为虚拟变量type_1，可以用其他两个变量代替如：1 - type_2 - type_3，
+      * 那么就不能加入第三个变量，除非打破上述规则：三个变量之和为1）
+      * 变量之间不能有线性关系，即不能有"多重共线"
       * ----------------------
       * TODO step 3
       * 考虑是否有type_1和type_1count同时存在的必要性，或者只用哪一个更好？同理如行为类型2、3。使用模型验证。
@@ -78,8 +78,8 @@ object LogisticPredict {
             .withColumn("time", getDiffHour(df("time")))
             .drop("user_geohash", "item_category") // TODO 暂时不考虑"用户位置"和"商品分类标识"
 
-        wholeData.take(10).foreach(println)
-
+        //        wholeData.take(10).foreach(println)
+        // TODO 将数据按时间倒序
         // 将数据按行为类型分成4类
         // 浏览的记录：user_id,item_id,time
         val dataOfView = wholeData.filter(row => row.getAs[Int]("behavior_type") == VIEW_TYPE).drop("behavior_type")
