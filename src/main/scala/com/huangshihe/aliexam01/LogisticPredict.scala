@@ -3,10 +3,12 @@ package com.huangshihe.aliexam01
 import java.text.{DateFormat, SimpleDateFormat}
 import java.util.Date
 
+import org.apache.log4j.{Level, Logger}
 import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.classification.LogisticRegression
 import org.apache.spark.ml.feature.VectorAssembler
 import org.apache.spark.sql.expressions.UserDefinedFunction
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.{DataFrame, SQLContext, SparkSession, functions}
 
@@ -14,6 +16,9 @@ import org.apache.spark.sql.{DataFrame, SQLContext, SparkSession, functions}
   * Created by huangshihe on 05/05/2017.
   */
 object LogisticPredict {
+
+    Logger.getLogger("org").setLevel(Level.ERROR)
+
     val spark: SparkSession = SparkSession.builder().appName("Tianmao logistic predict").master("local").getOrCreate()
 
     val sqlContext: SQLContext = spark.sqlContext
@@ -31,12 +36,12 @@ object LogisticPredict {
       * 行为类型：浏览-1，收藏-2，加购物车-3，购买-4
       * 模型思路：
       * 根据行为类型将数据分为四类，1-3类中的记录若在4中出现，即成功购买的标注1，否则标注0。
-      * 数据输入列：user_id,item_id,time,type_1,type_2,type_3 (type_1即为否浏览过；type_2为是否收藏；type_3为是否加入购物车)
-      * 自变量：time,type_1count,type_2,type_2count,type_3,type_3count
+      * 数据输入列：user_id,item_id,time1,time2,time3,type_1,type_2,type_3 (type_1即为否浏览过；type_2为是否收藏；type_3为是否加入购物车)
+      * 自变量：time1,time2,time3,type_1count,type_2count,type_3count
       * 因变量：type_4
       *
       * ----------------------
-      * step 2
+      * [TODO 问题：增加自变量失败] step 2
       * 自变量增加type_1count,type_2count,type_3count (即为浏览过的次数，收藏的次数，加入购物车的次数)
       * 自变量减少type_1，type_1为是否浏览，为虚拟变量，可以用type_2和type_3替代
       * 因为对于一条记录：type_1 + type_2 + type_3 == 1
@@ -44,7 +49,7 @@ object LogisticPredict {
       * 那么就不能加入第三个变量，除非打破上述规则：三个变量之和为1）
       * 变量之间不能有线性关系，即不能有"多重共线"
       * ----------------------
-      * TODO step 3
+      * step 3
       * 考虑是否有type_1和type_1count同时存在的必要性，或者只用哪一个更好？同理如行为类型2、3。使用模型验证。
       * ----------------------
       * TODO step 4
@@ -81,44 +86,74 @@ object LogisticPredict {
         //        wholeData.take(10).foreach(println)
         // TODO 将数据按时间倒序
         // 将数据按行为类型分成4类
-        // 浏览的记录：user_id,item_id,time
+        // 浏览过的统计数据，生成的结构：user_id,item_id,time,type_1count
         val dataOfView = wholeData.filter(row => row.getAs[Int]("behavior_type") == VIEW_TYPE).drop("behavior_type")
+            .groupBy("user_id", "item_id").agg(min("time").as("time1"), count("time").cast(IntegerType).as("type_1count"))
         // 收藏的记录：user_id,item_id,time
         val dataOfCollect = wholeData.filter(row => row.getAs[Int]("behavior_type") == COLLECT_TYPE).drop("behavior_type")
+            .groupBy("user_id", "item_id").agg(min("time").as("time2"), count("time").cast(IntegerType).as("type_2count"))
         // 加购物车的记录：user_id,item_id,time
         val dataOfAdd = wholeData.filter(row => row.getAs[Int]("behavior_type") == ADD_TO_CART_TYPE).drop("behavior_type")
+            .groupBy("user_id", "item_id").agg(min("time").as("time3"), count("time").cast(IntegerType).as("type_3count"))
         // 成功购买的记录：user_id,item_id,time,label=1.0
-        val dataOfBuy = wholeData.filter(row => row.getAs[Int]("behavior_type") == BUY_TYPE)
+        val dataOfBuy = wholeData.filter(row => row.getAs[Int]("behavior_type") == BUY_TYPE).drop("time")
             .drop("behavior_type").withColumn("label", functions.lit(1.0))
 
-        // join（通过(user_id,item_id,time)进行join操作）已成功购买的记录，加上label=1.0
-        val positiveView = dataOfView.join(dataOfBuy, Seq("user_id", "item_id", "time"))
-        // 实践证明：不要随便用差集，贼慢！
-        // 浏览的记录与标记为1.0的浏览的记录的差集即为浏览了但是没有生成购买记录的记录
-        val negativeView = dataOfView.except(positiveView.drop("label")).withColumn("label", functions.lit(0.0))
-        val allView = positiveView.union(negativeView)
-            .withColumn("type_1", functions.lit(true))
-            .withColumn("type_2", functions.lit(false)).withColumn("type_3", functions.lit(false))
+        // (user_id,item_id,time1,type_1count)join(user_id,item_id,time2,type2_count)join(user_id,item_id,time3,type3_count)
+        // => (user_id,item_id,time1,time2,time3,type_1count,type_2count,type_3count)
+        // TODO 这里的时间应该选取：最后一次type操作时间？第一次type操作时间？
+        // 讲道理来说：收藏和加购物车的记录之前都应该有对应的浏览记录，因此可以使用左连接，保证数据都是全的。但是这里还是使用全连接，比较稳妥
+        //        println("view:" + dataOfView.count()) // 8840964
+        //        println("collect:" + dataOfCollect.count()) // 432391
+        //        println("add:" + dataOfAdd.count()) // 542806
 
-        val positiveCollect = dataOfCollect.join(dataOfBuy, Seq("user_id", "item_id", "time"))
-        val negativeCollect = dataOfCollect.except(positiveCollect.drop("label")).withColumn("label", functions.lit(0.0))
-        val allCollect = positiveCollect.union(negativeCollect)
-            .withColumn("type_2", functions.lit(true))
-            .withColumn("type_1", functions.lit(false)).withColumn("type_3", functions.lit(false))
+        val all = dataOfView.join(dataOfCollect, Seq("user_id", "item_id"), "outer").join(dataOfAdd, Seq("user_id", "item_id"), "outer")
+        // 使用when和otherwise，将null转为0
+        val allWithOutNull = all.select(all("user_id"), all("item_id")
+            , when(all("time1").isNull, 0).otherwise(all("time1")).as("time1")
+            , when(all("type_1count").isNull, 0).otherwise(all("type_1count")).as("type_1count")
+            , when(all("time2").isNull, 0).otherwise(all("time2")).as("time2")
+            , when(all("type_2count").isNull, 0).otherwise(all("type_2count")).as("type_2count")
+            , when(all("time3").isNull, 0).otherwise(all("time3")).as("time3")
+            , when(all("type_3count").isNull, 0).otherwise(all("type_3count")).as("type_3count"))
 
-        val positiveAdd = dataOfAdd.join(dataOfBuy, Seq("user_id", "item_id", "time"))
-        val negativeAdd = dataOfAdd.except(positiveAdd.drop("label")).withColumn("label", functions.lit(0.0))
-        val allAdd = positiveAdd.union(negativeAdd)
-            .withColumn("type_3", functions.lit(true))
-            .withColumn("type_1", functions.lit(false)).withColumn("type_2", functions.lit(false))
+        //        println("all:" + allWithOutNull.count()) // inner join:36610 // outer join with null:8851499 // outer join without null:8851499
+        //        all.printSchema()
+        //        root
+        //        |-- user_id: integer (nullable = true)
+        //        |-- item_id: integer (nullable = true)
+        //        |-- time1: integer (nullable = true)
+        //        |-- type_1count: integer (nullable = false)
+        //        |-- time2: integer (nullable = true)
+        //        |-- type_2count: integer (nullable = false)
+        //        |-- time3: integer (nullable = true)
+        //        |-- type_3count: integer (nullable = false)
 
-        // 预处理后，将1-3类数据合并
-        val data = allView union allCollect union allAdd
+        // (user_id,item_id,time,type_1count...) join (user_id,item_id,label) by (user_id,item_id)
+        // => (user_id,item_id,time,type_1count...,label=1.0)
+        // join（通过(user_id,item_id)进行join操作）已成功购买的记录，加上label=1.0
+        val positiveData = allWithOutNull.join(dataOfBuy, Seq("user_id", "item_id"))
+        // 所有的记录与标记为1.0的浏览的记录的差集即为浏览了但是没有生成购买记录的记录即未购买的记录
+        val negativeData = allWithOutNull.except(positiveData.drop("label")).withColumn("label", functions.lit(0.0))
 
-        //        data.show(20)
+        val data = positiveData union negativeData
+
+        //        data.take(50).foreach(println)
+        //        [3349105,396219180,492,2,0,0,492,1,1.0]
+        //        [3436360,275074350,14,26,0,0,168,3,1.0]
+        //        [3436360,275074350,14,26,0,0,168,3,1.0]
+        //        [3632806,349045655,148,16,0,0,609,2,1.0]
+        //        [3638392,109432312,655,2,0,0,0,0,1.0]
+        //        [3681631,128590725,736,5,0,0,0,0,1.0]
+        //        [3773095,213873016,156,4,0,0,156,1,1.0]
+        //        [3883093,174457660,213,2,0,0,213,2,1.0]
+        //        [3974224,172523395,651,11,0,0,0,0,1.0]
+
+        // TODO 使用foreach，分布式使用foreach难度在哪？
 
         // 生成特征值
-        val vectorAssembler = new VectorAssembler().setInputCols(Array("time", "type_1", "type_2", "type_3"))
+        val vectorAssembler = new VectorAssembler()
+            .setInputCols(Array("time1", "type_1count", "time2", "type_2count", "time3", "type_3count"))
             .setOutputCol("features")
 
         //        val features = vectorAssembler.transform(data)
@@ -132,25 +167,25 @@ object LogisticPredict {
         val model = pipeline.fit(data)
 
         import spark.implicits._
-        val test = Seq((10001082, 53616768, 1, 0, 0, 1)
-            , (10001082, 53616768, 1, 1, 0, 0)
-            , (10001082, 53616768, 1, 0, 1, 0)
-            , (10001082, 53616768, 2, 0, 0, 1)
-            , (10001082, 290088061, 1, 1, 0, 0)
-            , (10001082, 323339743, 1, 0, 1, 0)
-        ).toDF("user_id", "item_id", "time", "type_1", "type_2", "type_3")
+        val test = Seq((10001082, 53616768, 1, 5, 3, 1, 1, 1)
+            , (10001082, 53616768, 10, 50, 30, 1, 0, 0)
+            , (10001082, 53616768, 10, 3, 5, 1, 1, 1)
+            , (10001082, 53616768, 1, 1, 1, 1, 1, 1)
+            , (10001082, 290088061, 10, 5, 3, 2, 1, 2)
+            , (10001082, 323339743, 0, 0, 0, 0, 0, 0)
+        ).toDF("user_id", "item_id", "time1", "type_1count", "time2", "type_2count", "time3", "type_3count")
         model.transform(test).show()
 
-        //        +--------+---------+----+------+------+------+-----------------+--------------------+--------------------+----------+
-        //        | user_id|  item_id|time|type_1|type_2|type_3|         features|       rawPrediction|         probability|prediction|
-        //        +--------+---------+----+------+------+------+-----------------+--------------------+--------------------+----------+
-        //        |10001082| 53616768|   1|     0|     0|     1|[1.0,0.0,0.0,1.0]|[2.54039847655302...|[0.92692582171709...|       0.0|
-        //        |10001082| 53616768|   1|     1|     0|     0|[1.0,1.0,0.0,0.0]|[2.54039847655302...|[0.92692582171709...|       0.0|
-        //        |10001082| 53616768|   1|     0|     1|     0|[1.0,0.0,1.0,0.0]|[2.54039847655302...|[0.92692582171709...|       0.0|
-        //        |10001082| 53616768|   2|     0|     0|     1|[2.0,0.0,0.0,1.0]|[2.54062936941713...|[0.92694145955193...|       0.0|
-        //        |10001082|290088061|   1|     1|     0|     0|[1.0,1.0,0.0,0.0]|[2.54039847655302...|[0.92692582171709...|       0.0|
-        //        |10001082|323339743|   1|     0|     1|     0|[1.0,0.0,1.0,0.0]|[2.54039847655302...|[0.92692582171709...|       0.0|
-        //        +--------+---------+----+------+------+------+-----------------+--------------------+--------------------+----------+
+        //        +--------+---------+-----+-----------+-----+-----------+-----+-----------+--------------------+--------------------+--------------------+----------+
+        //        | user_id|  item_id|time1|type_1count|time2|type_2count|time3|type_3count|            features|       rawPrediction|         probability|prediction|
+        //        +--------+---------+-----+-----------+-----+-----------+-----+-----------+--------------------+--------------------+--------------------+----------+
+        //        |10001082| 53616768|    1|          5|    3|          1|    1|          1|[1.0,5.0,3.0,1.0,...|[2.84138662769107...|[0.94487173503157...|       0.0|
+        //        |10001082| 53616768|   10|         50|   30|          1|    0|          0|[10.0,50.0,30.0,1...|[-8.4901076750791...|[2.05448914720112...|       1.0|
+        //        |10001082| 53616768|   10|          3|    5|          1|    1|          1|[10.0,3.0,5.0,1.0...|[3.39727760556040...|[0.96761934533963...|       0.0|
+        //        |10001082| 53616768|    1|          1|    1|          1|    1|          1|[1.0,1.0,1.0,1.0,...|[3.930958685799,-...|[0.98075287251232...|       0.0|
+        //        |10001082|290088061|   10|          5|    3|          2|    1|          2|[10.0,5.0,3.0,2.0...|[2.14485454241210...|[0.89518697348534...|       0.0|
+        //        |10001082|323339743|    0|          0|    0|          0|    0|          0|           (6,[],[])|[4.91169465755086...|[0.99269376882968...|       0.0|
+        //        +--------+---------+-----+-----------+-----+-----------+-----+-----------+--------------------+--------------------+--------------------+----------+
 
     }
 
