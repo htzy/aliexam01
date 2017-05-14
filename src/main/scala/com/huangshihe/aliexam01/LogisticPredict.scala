@@ -7,10 +7,10 @@ import org.apache.log4j.{Level, Logger}
 import org.apache.spark.ml.Pipeline
 import org.apache.spark.ml.classification.LogisticRegression
 import org.apache.spark.ml.feature.VectorAssembler
+import org.apache.spark.sql._
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.IntegerType
-import org.apache.spark.sql._
 
 /**
   * Created by huangshihe on 05/05/2017.
@@ -18,12 +18,13 @@ import org.apache.spark.sql._
 object LogisticPredict {
 
     Logger.getLogger("org").setLevel(Level.ERROR)
-    //        spark.sparkContext.setLogLevel("error")
 
     val spark: SparkSession = SparkSession.builder().appName("Tianmao logistic predict").master("local")
-//        .config("spark.executor.memory", "3g").config("spark.driver.memory", "2g")
+        //        .config("spark.executor.memory", "3g").config("spark.driver.memory", "2g")
         .getOrCreate()
     //    Exception in thread "main" java.lang.OutOfMemoryError: GC overhead limit exceeded
+    // 解决：1. 增加spark.executor.memory=7000M的内存和spark.driver.memory=6000M的内存（可直接在spark-env.sh中修改）
+    // 2. 在VM options中增加："-XX:-UseGCOverheadLimit" 取消GC占用大量时间为释放很小空间时的保护机制，参考：http://java-boy.iteye.com/blog/463454
 
 
     val sqlContext: SQLContext = spark.sqlContext
@@ -69,11 +70,10 @@ object LogisticPredict {
       *
       * 在输入数据时，要将购买时间置为第31天，即31天的1——24小时内。
       * 也就是说训练模型时，也需要将购买时间作为自变量？那么如果购买多次呢？保留最后一个时间？
-      * TODO （重要）实现如下思路
       * 思路=> 用1-29天建立模型，增加自变量：1-29天内有没有买过（买过多少次），第30天(最后一天)买还是没买作为因变量。
       * 思路=> 不需要加入购买时间作为自变量，因为因变量是最后一天买没买，买了就说明，购买时间为最后一天，也就是说购买时间已经体现在模型中。
       * 思路=> 将1-30天的数据作为输入，输入到模型中，输出第31天预测会购买的记录。（对应的时间需要修改，所有用的时间都是距离最后一天还剩余的小时数，那么这里的最后一天就是第31天，而不是第30天）
-      *
+      * 结果=> 预测的结果量太少，只有不到50条记录。TODO 进一步优化
       * ----------------------
       * TODO step 4
       * 自变量加入用户位置的空间标识
@@ -98,80 +98,6 @@ object LogisticPredict {
       *
       */
     def getPredictData(): Unit = {
-        //        // 将数据转换格式
-        //        // ref: http://stackoverflow.com/questions/29383107/how-to-change-column-types-in-spark-sqls-dataframe
-        //        val wholeData = df.withColumn("user_id", df("user_id").cast(IntegerType))
-        //            .withColumn("item_id", df("item_id").cast(IntegerType))
-        //            .withColumn("behavior_type", df("behavior_type").cast(IntegerType))
-        //            .withColumn("time", getDiffHour(df("time")))
-        //            .drop("user_geohash", "item_category") // TODO 暂时不考虑"用户位置"和"商品分类标识"
-        //
-        //        //        wholeData.take(10).foreach(println)
-        //        // TODO 将数据按时间倒序
-        //        // 将数据按行为类型分成4类
-        //        // 浏览过的统计数据，生成的结构：user_id,item_id,time,type_1count
-        //        val dataOfView = wholeData.filter(row => row.getAs[Int]("behavior_type") == VIEW_TYPE).drop("behavior_type")
-        //            .groupBy("user_id", "item_id").agg(min("time").as("time1"), count("time").cast(IntegerType).as("type_1count"))
-        //        // 收藏的记录：user_id,item_id,time
-        //        val dataOfCollect = wholeData.filter(row => row.getAs[Int]("behavior_type") == COLLECT_TYPE).drop("behavior_type")
-        //            .groupBy("user_id", "item_id").agg(min("time").as("time2"), count("time").cast(IntegerType).as("type_2count"))
-        //        // 加购物车的记录：user_id,item_id,time
-        //        val dataOfAdd = wholeData.filter(row => row.getAs[Int]("behavior_type") == ADD_TO_CART_TYPE).drop("behavior_type")
-        //            .groupBy("user_id", "item_id").agg(min("time").as("time3"), count("time").cast(IntegerType).as("type_3count"))
-        //        // 成功购买的记录：user_id,item_id,time,label=1.0
-        //        val dataOfBuy = wholeData.filter(row => row.getAs[Int]("behavior_type") == BUY_TYPE).drop("time")
-        //            .drop("behavior_type").withColumn("label", functions.lit(1.0))
-        //
-        //        // (user_id,item_id,time1,type_1count)join(user_id,item_id,time2,type2_count)join(user_id,item_id,time3,type3_count)
-        //        // => (user_id,item_id,time1,time2,time3,type_1count,type_2count,type_3count)
-        //        // TODO 这里的时间应该选取：最后一次type操作时间？第一次type操作时间？
-        //        // 讲道理来说：收藏和加购物车的记录之前都应该有对应的浏览记录，因此可以使用左连接，保证数据都是全的。但是这里还是使用全连接，比较稳妥
-        //        //        println("view:" + dataOfView.count()) // 8840964
-        //        //        println("collect:" + dataOfCollect.count()) // 432391
-        //        //        println("add:" + dataOfAdd.count()) // 542806
-        //
-        //        val all = dataOfView.join(dataOfCollect, Seq("user_id", "item_id"), "outer").join(dataOfAdd, Seq("user_id", "item_id"), "outer")
-        //        // 使用when和otherwise，将null转为0
-        //        val allWithOutNull = all.select(all("user_id"), all("item_id")
-        //            , when(all("time1").isNull, 0).otherwise(all("time1")).as("time1")
-        //            , when(all("type_1count").isNull, 0).otherwise(all("type_1count")).as("type_1count")
-        //            , when(all("time2").isNull, 0).otherwise(all("time2")).as("time2")
-        //            , when(all("type_2count").isNull, 0).otherwise(all("type_2count")).as("type_2count")
-        //            , when(all("time3").isNull, 0).otherwise(all("time3")).as("time3")
-        //            , when(all("type_3count").isNull, 0).otherwise(all("type_3count")).as("type_3count"))
-        //
-        //        //        println("all:" + allWithOutNull.count()) // inner join:36610 // outer join with null:8851499 // outer join without null:8851499
-        //        //        all.printSchema()
-        //        //        root
-        //        //        |-- user_id: integer (nullable = true)
-        //        //        |-- item_id: integer (nullable = true)
-        //        //        |-- time1: integer (nullable = true)
-        //        //        |-- type_1count: integer (nullable = false)
-        //        //        |-- time2: integer (nullable = true)
-        //        //        |-- type_2count: integer (nullable = false)
-        //        //        |-- time3: integer (nullable = true)
-        //        //        |-- type_3count: integer (nullable = false)
-        //
-        //        // (user_id,item_id,time,type_1count...) join (user_id,item_id,label) by (user_id,item_id)
-        //        // => (user_id,item_id,time,type_1count...,label=1.0)
-        //        // join（通过(user_id,item_id)进行join操作）已成功购买的记录，加上label=1.0
-        //        val positiveData = allWithOutNull.join(dataOfBuy, Seq("user_id", "item_id"))
-        //        // 所有的记录与标记为1.0的浏览的记录的差集即为浏览了但是没有生成购买记录的记录即未购买的记录
-        //        val negativeData = allWithOutNull.except(positiveData.drop("label")).withColumn("label", functions.lit(0.0))
-        //
-        //        val data =
-
-        //        data.take(50).foreach(println)
-        //        [3349105,396219180,492,2,0,0,492,1,1.0]
-        //        [3436360,275074350,14,26,0,0,168,3,1.0]
-        //        [3436360,275074350,14,26,0,0,168,3,1.0]
-        //        [3632806,349045655,148,16,0,0,609,2,1.0]
-        //        [3638392,109432312,655,2,0,0,0,0,1.0]
-        //        [3681631,128590725,736,5,0,0,0,0,1.0]
-        //        [3773095,213873016,156,4,0,0,156,1,1.0]
-        //        [3883093,174457660,213,2,0,0,213,2,1.0]
-        //        [3974224,172523395,651,11,0,0,0,0,1.0]
-
         // TODO 使用foreach，分布式使用foreach难度在哪？
 
         // 生成特征值
@@ -186,24 +112,10 @@ object LogisticPredict {
         // 训练模型
         val model = pipeline.fit(getTrainingData)
 
-        //        import spark.implicits._
-        //        val test = Seq((10001082, 53616768, 1, 5, 3, 1, 1, 1, 0)
-        //            , (10001082, 53616768, 10, 50, 30, 1, 0, 0, 1)
-        //            , (10001082, 53616768, 10, 50, 30, 1, 0, 0, 0)
-        //            , (10001082, 53616768, 1, 50, 30, 1, 0, 0, 1)
-        //            , (10001082, 53616768, 1, 50, 1, 1, 0, 0, 0)
-        //            , (10001082, 53616768, 10, 3, 5, 1, 1, 1, 0)
-        //            , (10001082, 53616768, 1, 1, 1, 1, 1, 1, 0)
-        //            , (10001082, 290088061, 10, 5, 3, 2, 1, 2, 0)
-        //            , (10001082, 323339743, 0, 0, 0, 0, 0, 0, 0)
-        //        ).toDF("user_id", "item_id", "time1", "type_1count", "time2", "type_2count", "time3", "type_3count", "type_4count")
-        //
-        //        model.transform(test).show()
-
         import spark.implicits._
 
         model.transform(getInputData)
-            .filter(row => row.getAs[Double]("prediction") >= 0)
+            .filter(row => row.getAs[Double]("prediction") > 0)
             .map(row => (row.getAs[Int]("user_id"), row.getAs[Int]("item_id")))
             .collect()
             .toStream.toDS().write.csv("src/main/resources/results/part-demo-5")
